@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Select-String -Path \"c:\\\\Users\\\\kwuensche\\\\Downloads\\\\LexVAD\\\\js\\\\data.js\" -Pattern \"window\\\\.LEXVAD\")",
+      "Bash(Select-Object -First 5)"
+    ]
+  }
+}
