@@ -11,13 +11,22 @@ const SIDEBAR_ZONE_COLORS = {
 };
 window.LEXVAD_ZONE_COLORS = SIDEBAR_ZONE_COLORS;
 
-const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => {
-  const { useState, useMemo } = React;
+const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, clickedVariantId }) => {
+  const { useState, useMemo, useEffect } = React;
   const [section,          setSection]          = useState('phaenomen');
   const [selectedVariantId,setSelectedVariantId]= useState(null);
   const [hoveredZone,      setHoveredZone]      = useState(null);
   const [raumFilter,       setRaumFilter]        = useState('all');
   const [raumListTab,      setRaumListTab]       = useState('zonen');
+  const [ringTab,          setRingTab]           = useState('zonen');
+
+  useEffect(() => {
+    if (clickedVariantId) {
+      setSelectedVariantId(clickedVariantId);
+      setSection('variante');
+    }
+  }, [clickedVariantId]);
+
   if (!phenomenon) return null;
 
   const { VARIANTS, BUNDESLAND_DATA, DATA_POINTS } = window.LEXVAD;
@@ -61,6 +70,37 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
     const names = geoOrder.filter(n => data[n]);
     return { zoneData: data, zoneNames: names };
   }, [phenomenon.id, zoneAssignments, geojsonData]);
+
+  // Ring chart data — distribution of active variant across zones or Bundesländer
+  const { zoneRing, blRing } = useMemo(() => {
+    const pts = DATA_POINTS.filter(p => p.item === phenomenon.id && p.variant === activeVarId);
+
+    const zc = {};
+    pts.forEach(p => { const z = zoneAssignments[p.id]; if (z) zc[z] = (zc[z] || 0) + (p.anzahl || 1); });
+    const zt = Object.values(zc).reduce((s, v) => s + v, 0);
+    const geoOrder = geojsonData
+      ? [...new Set(geojsonData.features.map(f => f.properties.Dialektregion_Name))]
+      : Object.keys(SIDEBAR_ZONE_COLORS);
+    const zRing = geoOrder
+      .filter(z => zc[z])
+      .map(z => ({ name: z, count: zc[z], total: zt, color: SIDEBAR_ZONE_COLORS[z] || '#94a3b8' }))
+      .sort((a, b) => b.count - a.count);
+
+    const bc = {};
+    pts.forEach(p => { if (p.bundesland) bc[p.bundesland] = (bc[p.bundesland] || 0) + (p.anzahl || 1); });
+    const bt = Object.values(bc).reduce((s, v) => s + v, 0);
+    const bRing = Object.entries(bc)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => {
+        const blPts = DATA_POINTS.filter(q => q.item === phenomenon.id && q.bundesland === name);
+        const bz = {};
+        blPts.forEach(q => { const z = zoneAssignments[q.id]; if (z) bz[z] = (bz[z] || 0) + 1; });
+        const dom = Object.entries(bz).sort((a, b) => b[1] - a[1])[0]?.[0];
+        return { name, count, total: bt, color: SIDEBAR_ZONE_COLORS[dom] || '#94a3b8' };
+      });
+
+    return { zoneRing: zRing, blRing: bRing };
+  }, [activeVarId, phenomenon.id, zoneAssignments, geojsonData]);
 
   const tabs = [
     { id:'phaenomen', label:'Phänomen' },
@@ -110,32 +150,73 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
 
       <div style={{ padding: '16px 14px', display:'flex', flexDirection:'column', gap:12 }}>
 
-        {/* Phenomenon card */}
-        <div style={{
-          background:'#f8fafc', borderRadius:12, border:'1px solid #e2e8f0',
-          boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px',
-        }}>
-          <div style={{ fontSize:10, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', marginBottom:6 }}>
-            AUSGEWÄHLTES PHÄNOMEN
+        {/* Phenomenon card — hidden on Variante tab */}
+        {section !== 'variante' && (
+          <div style={{
+            background:'#f8fafc', borderRadius:12, border:'1px solid #e2e8f0',
+            boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px',
+          }}>
+            <div style={{ fontSize:10, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', marginBottom:6 }}>
+              AUSGEWÄHLTES PHÄNOMEN
+            </div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#0f172a', lineHeight:1.3, marginBottom:12 }}>
+              {phenomenon.label}
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              {[
+                { label:'Bögen',    val: phenomenon.boegenCount.toLocaleString('de-AT') },
+                { label:'Varianten',val: phenomenon.variantCount },
+              ].map(s => (
+                <div key={s.label} style={{
+                  flex:1, background:'#fff', borderRadius:8, border:'1px solid #e2e8f0',
+                  boxShadow:'0 1px 2px rgba(0,0,0,0.04)', padding:'10px 12px',
+                }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:'#78859a', marginBottom:4 }}>{s.label}</div>
+                  <div style={{ fontSize:18, fontWeight:700, color:'#0f172a' }}>{s.val}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div style={{ fontSize:16, fontWeight:700, color:'#0f172a', lineHeight:1.3, marginBottom:12 }}>
-            {phenomenon.label}
-          </div>
-          <div style={{ display:'flex', gap:8 }}>
-            {[
-              { label:'Bögen',    val: phenomenon.boegenCount.toLocaleString('de-AT') },
-              { label:'Varianten',val: phenomenon.variantCount },
-            ].map(s => (
-              <div key={s.label} style={{
-                flex:1, background:'#fff', borderRadius:8, border:'1px solid #e2e8f0',
-                boxShadow:'0 1px 2px rgba(0,0,0,0.04)', padding:'10px 12px',
-              }}>
-                <div style={{ fontSize:11, fontWeight:700, color:'#78859a', marginBottom:4 }}>{s.label}</div>
-                <div style={{ fontSize:18, fontWeight:700, color:'#0f172a' }}>{s.val}</div>
+        )}
+
+        {/* Variant card — shown only on Variante tab, updates with selected variant */}
+        {section === 'variante' && activeVar && (() => {
+          const schreibweisenCount = new Set(
+            DATA_POINTS
+              .filter(p => p.item === phenomenon.id && p.variant === activeVarId && p.rawVariante)
+              .map(p => p.rawVariante)
+          ).size;
+          return (
+            <div style={{
+              background:'#f8fafc', borderRadius:12, border:'1px solid #e2e8f0',
+              boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px',
+            }}>
+              <div style={{ fontSize:10, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', marginBottom:6 }}>
+                AUSGEWÄHLTE VARIANTE
               </div>
-            ))}
-          </div>
-        </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                <div style={{ width:10, height:10, borderRadius:'50%', background:activeVar.color, flexShrink:0 }}/>
+                <div style={{ fontFamily:'Liberation Mono,monospace', fontSize:16, fontWeight:700, color:'#0f172a', lineHeight:1.3 }}>
+                  {activeVar.label}
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                {[
+                  { label:'Nennungen',     val: activeVar.count.toLocaleString('de-AT') },
+                  { label:'Schreibweisen', val: schreibweisenCount },
+                ].map(s => (
+                  <div key={s.label} style={{
+                    flex:1, background:'#fff', borderRadius:8, border:'1px solid #e2e8f0',
+                    boxShadow:'0 1px 2px rgba(0,0,0,0.04)', padding:'10px 12px',
+                  }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#78859a', marginBottom:4 }}>{s.label}</div>
+                    <div style={{ fontSize:18, fontWeight:700, color:'#0f172a' }}>{s.val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Variants distribution */}
         {section === 'phaenomen' && (
@@ -190,7 +271,7 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
             </div>
 
             {/* Selected variant stats */}
-            {activeVar && (
+            {/* {activeVar && (
               <div style={{ borderRadius:12, border:`1px solid ${activeVar.color}22`, boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px', background:`${activeVar.color}08` }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
                   <div style={{ width:10, height:10, borderRadius:'50%', background:activeVar.color, flexShrink:0 }}/>
@@ -204,7 +285,77 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
                   {activeVar.count} Belege · {DATA_POINTS.filter(p => p.item === phenomenon.id && p.variant === activeVarId).length} Ortspunkte
                 </div>
               </div>
-            )}
+            )} */}
+
+            {/* Ring chart — geographic distribution of active variant */}
+            {(() => {
+              const ringData = ringTab === 'zonen' ? zoneRing : blRing;
+              if (ringData.length === 0) return null;
+
+              const cx = 90, cy = 90, R = 72, ri = 44;
+              let angle = -Math.PI / 2;
+              const segments = ringData.map(d => {
+                const sweep = (d.count / d.total) * 2 * Math.PI;
+                const end = angle + sweep;
+                const large = sweep > Math.PI ? 1 : 0;
+                const [c1, s1, c2, s2] = [Math.cos(angle), Math.sin(angle), Math.cos(end), Math.sin(end)];
+                const path = `M ${cx+R*c1} ${cy+R*s1} A ${R} ${R} 0 ${large} 1 ${cx+R*c2} ${cy+R*s2} L ${cx+ri*c2} ${cy+ri*s2} A ${ri} ${ri} 0 ${large} 0 ${cx+ri*c1} ${cy+ri*s1} Z`;
+                const seg = { ...d, path };
+                angle = end;
+                return seg;
+              });
+
+              return (
+                <div style={{ borderRadius:12, border:'1px solid #e2e8f0', boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px' }}>
+                  <div style={{ display:'inline-flex', alignItems:'center', gap:4, marginBottom:10,
+                    fontSize:11, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', fontFamily:'Inter,sans-serif' }}>
+                    <span>VERTEILUNG NACH</span>
+                    <div style={{ position:'relative', display:'inline-flex', alignItems:'center' }}>
+                      <select value={ringTab} onChange={e => setRingTab(e.target.value)} style={{
+                        fontSize:11, fontWeight:700, color:'#78859a', letterSpacing:'0.5px',
+                        fontFamily:'Inter,sans-serif', background:'none', border:'none',
+                        cursor:'pointer', outline:'none', appearance:'none', WebkitAppearance:'none',
+                        paddingRight:14,
+                      }}>
+                        <option value="zonen">DIALEKTZONE</option>
+                        <option value="bundesland">BUNDESLAND</option>
+                      </select>
+                      <svg width={8} height={6} viewBox="0 0 9 6" fill="#78859a"
+                        style={{ position:'absolute', right:0, pointerEvents:'none' }}>
+                        <path d="M4.594 6L0 0h9.188z"/>
+                      </svg>
+                    </div>
+                  </div>
+
+                  <svg viewBox="0 0 180 180" style={{ width:'100%', maxWidth:160, height:'auto', display:'block', margin:'0 auto 12px' }}>
+                    {segments.length === 1 ? (
+                      <>
+                        <circle cx={cx} cy={cy} r={R} fill={segments[0].color}/>
+                        <circle cx={cx} cy={cy} r={ri} fill="#fff"/>
+                      </>
+                    ) : (
+                      segments.map(seg => (
+                        <path key={seg.name} d={seg.path} fill={seg.color} stroke="#fff" strokeWidth={2}/>
+                      ))
+                    )}
+                  </svg>
+
+                  <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                    {ringData.map(d => {
+                      const exactPct = d.count / d.total * 100;
+                      const pctLabel = exactPct < 1 ? '<1%' : `${Math.round(exactPct)}%`;
+                      return (
+                        <div key={d.name} style={{ display:'flex', alignItems:'center', gap:8, padding:'3px 0' }}>
+                          <div style={{ width:9, height:9, borderRadius:'50%', background:d.color, flexShrink:0 }}/>
+                          <span style={{ fontFamily:'Inter,sans-serif', fontSize:11, color:'#334155', flex:1 }}>{d.name}</span>
+                          <span style={{ fontFamily:'Inter,sans-serif', fontSize:11, fontWeight:700, color:'#64748b' }}>{pctLabel}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Co-occurring variants */}
             <div style={{ borderRadius:12, border:'1px solid #e2e8f0', boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px' }}>
@@ -242,13 +393,8 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
 
         {/* Dialect zone radar + list */}
         {section === 'raum' && (() => {
-          const blById = Object.fromEntries(blData.map(b => [b.bundesland, b]));
           const axisVariants = variants.filter(v => v.id !== 'sonstige');
           const N = axisVariants.length;
-
-          // Filter state helpers
-          const isZoneFilter = raumFilter !== 'all' && zoneNames.includes(raumFilter);
-          const isBLFilter   = raumFilter !== 'all' && !zoneNames.includes(raumFilter);
 
           if (N < 3 || zoneNames.length === 0) return (
             <div style={{ padding:'20px 12px', textAlign:'center', color:'#94a3b8', fontFamily:'Inter,sans-serif', fontSize:12 }}>
@@ -266,7 +412,7 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
           };
           const gridLevels = [0.25, 0.5, 0.75, 1.0];
 
-          // Build zone polygons from real zoneData
+          // Zone polygons
           const zonePolygons = zoneNames.map(zName => {
             const zd = zoneData[zName];
             const pts = axisVariants.map((v, i) => {
@@ -276,31 +422,33 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
             return { name: zName, color: SIDEBAR_ZONE_COLORS[zName] || '#94a3b8', pts };
           });
 
-          // BL polygon overlay if a Bundesland is selected
-          let blPolygon = null;
-          if (isBLFilter) {
-            const bl = blById[raumFilter];
-            if (bl) {
-              const blPts = axisVariants.map((v, i) => {
-                const val = bl.total > 0 ? (bl[v.id] || 0) / bl.total : 0;
-                return pt(i, val);
-              });
-              blPolygon = { pts: blPts, color: '#0f172a', label: raumFilter };
-            }
-          }
+          // BL polygons — color derived from each BL's dominant dialect zone
+          const blPolygons = blData.map(bl => {
+            const blPts = DATA_POINTS.filter(p => p.item === phenomenon.id && p.bundesland === bl.bundesland);
+            const zoneCounts = {};
+            blPts.forEach(p => {
+              const z = zoneAssignments[p.id];
+              if (z) zoneCounts[z] = (zoneCounts[z] || 0) + 1;
+            });
+            const dominantZone = Object.entries(zoneCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+            const color = SIDEBAR_ZONE_COLORS[dominantZone] || '#94a3b8';
+            const radarPts = axisVariants.map((v, i) => {
+              const val = bl.total > 0 ? (bl[v.id] || 0) / bl.total : 0;
+              return pt(i, val);
+            });
+            return { name: bl.bundesland, color, pts: radarPts };
+          });
 
-          const dimZone = (zName) => {
-            if (raumFilter === 'all') return false;
-            if (isZoneFilter) return zName !== raumFilter;
-            if (isBLFilter)   return true;
-            return false;
-          };
+          const isZonenTab    = raumListTab === 'zonen';
+          const activePolygons = isZonenTab ? zonePolygons : blPolygons;
+          const isDimmed  = (name) => raumFilter !== 'all' && raumFilter !== name;
+          const isSelected = (name) => raumFilter !== 'all' && raumFilter === name;
 
           return (
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
 
-              {/* Filter dropdown */}
-              <div style={{ borderRadius:12, border:'1px solid #e2e8f0', boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px' }}>
+              {/* Filter dropdown — scoped to active tab's category */}
+              {/* <div style={{ borderRadius:12, border:'1px solid #e2e8f0', boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px' }}>
                 <div style={{ fontSize:11, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', marginBottom:8 }}>FILTER</div>
                 <div style={{ position:'relative' }}>
                   <select value={raumFilter} onChange={e => setRaumFilter(e.target.value)} style={{
@@ -310,27 +458,23 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
                     cursor:'pointer', outline:'none', appearance:'none',
                   }}>
                     <option value="all">Alle anzeigen</option>
-                    <optgroup label="Dialektzonen">
-                      {zoneNames.map(z => (
-                        <option key={z} value={z}>{z}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Bundesland">
-                      {blData.map(bl => (
-                        <option key={bl.bundesland} value={bl.bundesland}>{bl.bundesland}</option>
-                      ))}
-                    </optgroup>
+                    {isZonenTab
+                      ? zoneNames.map(z => <option key={z} value={z}>{z}</option>)
+                      : blData.map(bl => <option key={bl.bundesland} value={bl.bundesland}>{bl.bundesland}</option>)
+                    }
                   </select>
                   <svg width={9} height={9} viewBox="0 0 9 6" fill="#94a3b8"
                     style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}>
                     <path d="M4.594 6L0 0h9.188z"/>
                   </svg>
                 </div>
-              </div>
+              </div> */}
 
               {/* Radar SVG */}
               <div style={{ borderRadius:12, border:'1px solid #e2e8f0', boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px', background:'#fafbfc' }}>
-                <div style={{ fontSize:11, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', marginBottom:10 }}>VARIANTENPROFIL PRO DIALEKTZONE</div>
+                <div style={{ fontSize:11, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', marginBottom:10 }}>
+                  {isZonenTab ? 'VARIANTENPROFIL PRO DIALEKTZONE' : 'VARIANTENPROFIL PRO BUNDESLAND'}
+                </div>
                 <svg viewBox="0 0 260 260" style={{ width:'100%', height:'auto', display:'block' }}>
                   {/* Grid rings */}
                   {gridLevels.map(lvl => (
@@ -343,34 +487,24 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
                     const [x, y] = pt(i, 1);
                     return <line key={v.id} x1={cx} y1={cy} x2={x} y2={y} stroke="#e2e8f0" strokeWidth={0.8}/>;
                   })}
-                  {/* Zone polygons */}
-                  {zonePolygons.map(({ name, color, pts: zpts }) => {
-                    const isHovered  = hoveredZone === name;
-                    const isDimmed   = dimZone(name);
-                    const isSelected = isZoneFilter && raumFilter === name;
+                  {/* Active polygons (zones or Bundesländer depending on tab) */}
+                  {activePolygons.map(({ name, color, pts: ppts }) => {
+                    const hovered  = hoveredZone === name;
+                    const dimmed   = isDimmed(name);
+                    const selected = isSelected(name);
                     return (
                       <polygon key={name}
-                        points={zpts.map(p => p.join(',')).join(' ')}
-                        fill={color + (isSelected || isHovered ? '55' : isDimmed ? '0a' : '22')}
+                        points={ppts.map(p => p.join(',')).join(' ')}
+                        fill={color + (selected || hovered ? '55' : dimmed ? '0a' : '22')}
                         stroke={color}
-                        strokeWidth={isSelected || isHovered ? 2 : 1}
-                        opacity={isDimmed ? 0.3 : 1}
+                        strokeWidth={selected || hovered ? 2 : 1}
+                        opacity={dimmed ? 0.3 : 1}
                         style={{ cursor:'pointer', transition:'all 0.15s' }}
                         onMouseEnter={() => setHoveredZone(name)}
                         onMouseLeave={() => setHoveredZone(null)}
                       />
                     );
                   })}
-                  {/* BL polygon overlay */}
-                  {blPolygon && (
-                    <polygon
-                      points={blPolygon.pts.map(p => p.join(',')).join(' ')}
-                      fill={blPolygon.color + '22'}
-                      stroke={blPolygon.color}
-                      strokeWidth={2.5}
-                      strokeDasharray="4 2"
-                    />
-                  )}
                   {/* Axis labels */}
                   {axisVariants.map((v, i) => {
                     const [x, y] = pt(i, 1.18);
@@ -416,7 +550,7 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
                     const dominant = axisVariants.reduce((best, v) =>
                       (zd[v.id] || 0) > (zd[best?.id] || 0) ? v : best, axisVariants[0]);
                     const domPct = zd.total > 0 ? Math.round((zd[dominant?.id] || 0) / zd.total * 100) : 0;
-                    const isSelected = isZoneFilter && raumFilter === zName;
+                    const sel = raumFilter === zName;
                     return (
                       <div key={zName}
                         onMouseEnter={() => setHoveredZone(zName)}
@@ -425,8 +559,8 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
                         style={{
                           display:'flex', alignItems:'center', gap:8, padding:'7px 8px',
                           borderRadius:6, marginBottom:2, cursor:'pointer',
-                          background: isSelected || hoveredZone === zName ? '#f1f5f9' : 'transparent',
-                          border: isSelected ? `1px solid ${color}44` : '1px solid transparent',
+                          background: sel || hoveredZone === zName ? '#f1f5f9' : 'transparent',
+                          border: sel ? `1px solid ${color}44` : '1px solid transparent',
                           transition:'all 0.15s',
                         }}>
                         <div style={{ width:10, height:10, borderRadius:2, background:color, flexShrink:0 }}/>
@@ -438,27 +572,28 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData }) => 
                   })}
 
                   {raumListTab === 'bundesland' && blData.map(bl => {
-                    // Find the most common zone for this Bundesland's points
-                    const pts = DATA_POINTS.filter(p => p.item === phenomenon.id && p.bundesland === bl.bundesland);
-                    const zoneCounts = {};
-                    pts.forEach(p => {
+                    const blPts2 = DATA_POINTS.filter(p => p.item === phenomenon.id && p.bundesland === bl.bundesland);
+                    const zoneCounts2 = {};
+                    blPts2.forEach(p => {
                       const z = zoneAssignments[p.id];
-                      if (z) zoneCounts[z] = (zoneCounts[z] || 0) + 1;
+                      if (z) zoneCounts2[z] = (zoneCounts2[z] || 0) + 1;
                     });
-                    const dominantZone = Object.entries(zoneCounts).sort((a,b) => b[1]-a[1])[0]?.[0];
+                    const dominantZone = Object.entries(zoneCounts2).sort((a, b) => b[1] - a[1])[0]?.[0];
                     const zColor = SIDEBAR_ZONE_COLORS[dominantZone] || '#94a3b8';
                     const dominant = axisVariants.reduce((best, v) =>
                       (bl[v.id] || 0) > (bl[best?.id] || 0) ? v : best, axisVariants[0]);
                     const domPct = bl.total > 0 ? Math.round((bl[dominant?.id] || 0) / bl.total * 100) : 0;
-                    const isSelected = isBLFilter && raumFilter === bl.bundesland;
+                    const sel = raumFilter === bl.bundesland;
                     return (
                       <div key={bl.bundesland}
+                        onMouseEnter={() => setHoveredZone(bl.bundesland)}
+                        onMouseLeave={() => setHoveredZone(null)}
                         onClick={() => setRaumFilter(raumFilter === bl.bundesland ? 'all' : bl.bundesland)}
                         style={{
                           display:'flex', alignItems:'center', gap:8, padding:'7px 8px',
                           borderRadius:6, marginBottom:2, cursor:'pointer',
-                          background: isSelected ? '#f1f5f9' : 'transparent',
-                          border: isSelected ? `1px solid ${zColor}44` : '1px solid transparent',
+                          background: sel || hoveredZone === bl.bundesland ? '#f1f5f9' : 'transparent',
+                          border: sel ? `1px solid ${zColor}44` : '1px solid transparent',
                           transition:'all 0.15s',
                         }}>
                         <div style={{ width:10, height:10, borderRadius:2, background:zColor, flexShrink:0 }}/>

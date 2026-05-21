@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(Select-String -Path \"c:\\\\Users\\\\kwuensche\\\\Downloads\\\\LexVAD\\\\js\\\\data.js\" -Pattern \"window\\\\.LEXVAD\")",
-      "Bash(Select-Object -First 5)"
+      "Bash(Select-Object -First 5)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_snapshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__click",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__wait_for"
     ]
+  },
+  "enabledPlugins": {
+    "chrome-devtools-mcp@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true
   }
 }

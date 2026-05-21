@@ -290,6 +290,14 @@ const MapPanel = ({ phenomenon, selectedVariant, mapMode, onPointClick, sidebarO
             colorRange: variantIds.join('|'),
           },
           pickable: true,
+          onClick: ({ object }) => {
+            if (object && object.points && object.points.length) {
+              const counts = {};
+              object.points.forEach(p => { const src = p.source || p; counts[src.variant] = (counts[src.variant] || 0) + 1; });
+              const top = Object.entries(counts).sort((a,b) => b[1]-a[1])[0];
+              if (top) onPointClick({ variant: top[0] });
+            }
+          },
           onHover: ({ object, x, y }) => {
             if (object && object.points && object.points.length) {
               const counts = {};

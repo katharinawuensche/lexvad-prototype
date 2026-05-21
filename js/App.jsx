@@ -57,6 +57,7 @@ const App = () => {
   const [phenId,         setPhenId]         = useState(() => getLS('phenId', PHENOMENA[0].id));
   const [variantSel,     setVariantSel]     = useState('all');
   const [sidebarOpen,    setSidebarOpen]    = useState(false);
+  const [clickedVariantId, setClickedVariantId] = useState(null);
   const [leftPhen,       setLeftPhen]       = useState(() => getLS('leftPhen',  PHENOMENA[0].id));
   const [rightPhen,      setRightPhen]      = useState(() => getLS('rightPhen', PHENOMENA[2]?.id || PHENOMENA[1].id));
   const [leftVariantSel, setLeftVariantSel] = useState('all');
@@ -366,7 +367,7 @@ const App = () => {
 
             <div style={{ position:'relative', transition:'margin-right 0.3s ease' }}>
               {(view === 'punktkarte' || view === 'flaechenkarte') && (
-                <MapPanel phenomenon={phenomenon} selectedVariant={variantSel} mapMode={mapMode} onPointClick={() => setSidebarOpen(true)} sidebarOpen={sidebarOpen} geojsonData={geojsonData}/>
+                <MapPanel phenomenon={phenomenon} selectedVariant={variantSel} mapMode={mapMode} onPointClick={(pt) => { setSidebarOpen(true); if (pt?.variant) setClickedVariantId(pt.variant); }} sidebarOpen={sidebarOpen} geojsonData={geojsonData}/>
               )}
               {view === 'vergleichen' && (
                 <ComparePanel phenomenon={phenomenon} leftPhen={leftPhen} rightPhen={rightPhen} onChangeLeft={setLeftPhen} onChangeRight={setRightPhen}/>
@@ -379,7 +380,7 @@ const App = () => {
               )}
             </div>
 
-            {sidebarOpen && <Sidebar phenomenon={phenomenon} onClose={() => setSidebarOpen(false)} zoneAssignments={zoneAssignments} geojsonData={geojsonData}/>}
+            {sidebarOpen && <Sidebar phenomenon={phenomenon} onClose={() => setSidebarOpen(false)} zoneAssignments={zoneAssignments} geojsonData={geojsonData} clickedVariantId={clickedVariantId}/>}
           </div>
         )}
 
