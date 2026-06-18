@@ -11,6 +11,49 @@ const SIDEBAR_ZONE_COLORS = {
 };
 window.LEXVAD_ZONE_COLORS = SIDEBAR_ZONE_COLORS;
 
+const SIDEBAR_ZONE_PATTERN_ORDER = Object.keys(SIDEBAR_ZONE_COLORS);
+const zonePatternIndex = (zoneName) => Math.max(0, SIDEBAR_ZONE_PATTERN_ORDER.indexOf(zoneName));
+const zonePatternId = (zoneName) => `lexvad-zone-pattern-${zonePatternIndex(zoneName)}`;
+const zonePatternSwatchStyle = (zoneName, fallbackColor = '#94a3b8') => {
+  const color = SIDEBAR_ZONE_COLORS[zoneName] || fallbackColor;
+  const pattern = zonePatternIndex(zoneName) % 6;
+  const backgroundImage = [
+    `repeating-linear-gradient(45deg, transparent 0 3px, ${color} 3px 4px)`,
+    `repeating-linear-gradient(135deg, transparent 0 3px, ${color} 3px 4px)`,
+    `repeating-linear-gradient(0deg, transparent 0 3px, ${color} 3px 4px)`,
+    `repeating-linear-gradient(90deg, transparent 0 3px, ${color} 3px 4px)`,
+    `radial-gradient(circle at 2px 2px, ${color} 1.3px, transparent 1.5px)`,
+    `linear-gradient(45deg, ${color} 25%, transparent 25%, transparent 75%, ${color} 75%), linear-gradient(45deg, ${color} 25%, transparent 25%, transparent 75%, ${color} 75%)`,
+  ][pattern];
+  return {
+    backgroundColor: `${color}26`,
+    backgroundImage,
+    backgroundSize: pattern >= 4 ? '6px 6px' : undefined,
+    backgroundPosition: pattern === 5 ? '0 0, 3px 3px' : undefined,
+  };
+};
+const ZonePatternDefs = () => (
+  <defs>
+    {SIDEBAR_ZONE_PATTERN_ORDER.map((zoneName, index) => {
+      const color = SIDEBAR_ZONE_COLORS[zoneName];
+      const pattern = index % 6;
+      return (
+        <pattern key={zoneName} id={zonePatternId(zoneName)}
+          patternUnits="userSpaceOnUse" width={8} height={8}>
+          <rect width={8} height={8} fill={color} opacity={0.10}/>
+          {pattern === 0 && <path d="M-2 8 L8 -2 M0 10 L10 0" stroke={color} strokeWidth={1.4} opacity={0.8}/>}
+          {pattern === 1 && <path d="M-2 0 L8 10 M0 -2 L10 8" stroke={color} strokeWidth={1.4} opacity={0.8}/>}
+          {pattern === 2 && <path d="M0 2 H8 M0 6 H8" stroke={color} strokeWidth={1.2} opacity={0.8}/>}
+          {pattern === 3 && <path d="M2 0 V8 M6 0 V8" stroke={color} strokeWidth={1.2} opacity={0.8}/>}
+          {pattern === 4 && <circle cx={2} cy={2} r={1.2} fill={color} opacity={0.8}/>}
+          {pattern === 4 && <circle cx={6} cy={6} r={1.2} fill={color} opacity={0.8}/>}
+          {pattern === 5 && <path d="M0 0 H4 V4 H0 Z M4 4 H8 V8 H4 Z" fill={color} opacity={0.45}/>}
+        </pattern>
+      );
+    })}
+  </defs>
+);
+
 const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, clickedVariantId }) => {
   const { useState, useMemo, useEffect } = React;
   const [section,          setSection]          = useState('phaenomen');
@@ -83,7 +126,7 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
       : Object.keys(SIDEBAR_ZONE_COLORS);
     const zRing = geoOrder
       .filter(z => zc[z])
-      .map(z => ({ name: z, count: zc[z], total: zt, color: SIDEBAR_ZONE_COLORS[z] || '#94a3b8' }))
+      .map(z => ({ name: z, count: zc[z], total: zt, color: SIDEBAR_ZONE_COLORS[z] || '#94a3b8', patternZone: z }))
       .sort((a, b) => b.count - a.count);
 
     const bc = {};
@@ -96,7 +139,7 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
         const bz = {};
         blPts.forEach(q => { const z = zoneAssignments[q.id]; if (z) bz[z] = (bz[z] || 0) + 1; });
         const dom = Object.entries(bz).sort((a, b) => b[1] - a[1])[0]?.[0];
-        return { name, count, total: bt, color: SIDEBAR_ZONE_COLORS[dom] || '#94a3b8' };
+        return { name, count, total: bt, color: SIDEBAR_ZONE_COLORS[dom] || '#94a3b8', patternZone: dom };
       });
 
     return { zoneRing: zRing, blRing: bRing };
@@ -328,14 +371,18 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
                   </div>
 
                   <svg viewBox="0 0 180 180" style={{ width:'100%', maxWidth:160, height:'auto', display:'block', margin:'0 auto 12px' }}>
+                    <ZonePatternDefs/>
                     {segments.length === 1 ? (
                       <>
-                        <circle cx={cx} cy={cy} r={R} fill={segments[0].color}/>
+                        <circle cx={cx} cy={cy} r={R}
+                          fill={segments[0].patternZone ? `url(#${zonePatternId(segments[0].patternZone)})` : segments[0].color}/>
                         <circle cx={cx} cy={cy} r={ri} fill="#fff"/>
                       </>
                     ) : (
                       segments.map(seg => (
-                        <path key={seg.name} d={seg.path} fill={seg.color} stroke="#fff" strokeWidth={2}/>
+                        <path key={seg.name} d={seg.path}
+                          fill={seg.patternZone ? `url(#${zonePatternId(seg.patternZone)})` : seg.color}
+                          stroke="#fff" strokeWidth={2}/>
                       ))
                     )}
                   </svg>
@@ -346,7 +393,11 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
                       const pctLabel = exactPct < 1 ? '<1%' : `${Math.round(exactPct)}%`;
                       return (
                         <div key={d.name} style={{ display:'flex', alignItems:'center', gap:8, padding:'3px 0' }}>
-                          <div style={{ width:9, height:9, borderRadius:'50%', background:d.color, flexShrink:0 }}/>
+                          <div style={{
+                            width:9, height:9, borderRadius:'50%', flexShrink:0,
+                            border:`1px solid ${d.color}66`,
+                            ...zonePatternSwatchStyle(d.patternZone, d.color),
+                          }}/>
                           <span style={{ fontFamily:'Inter,sans-serif', fontSize:11, color:'#334155', flex:1 }}>{d.name}</span>
                           <span style={{ fontFamily:'Inter,sans-serif', fontSize:11, fontWeight:700, color:'#64748b' }}>{pctLabel}</span>
                         </div>
@@ -394,55 +445,18 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
         {/* Dialect zone radar + list */}
         {section === 'raum' && (() => {
           const axisVariants = variants.filter(v => v.id !== 'sonstige');
-          const N = axisVariants.length;
+          const isZonenTab = raumListTab === 'zonen';
 
-          if (N < 3 || zoneNames.length === 0) return (
+          if (zoneNames.length === 0) return (
             <div style={{ padding:'20px 12px', textAlign:'center', color:'#94a3b8', fontFamily:'Inter,sans-serif', fontSize:12 }}>
-              {zoneNames.length === 0 ? 'Dialektzonen werden geladen…' : 'Zu wenig Varianten für Radar.'}
+              Dialektzonen werden geladen…
             </div>
           );
 
-          // Radar geometry
-          const cx = 130, cy = 130, r = 95;
-          const angleStep = (2 * Math.PI) / N;
-          const angle = i => -Math.PI / 2 + i * angleStep;
-          const pt = (i, val) => {
-            const a = angle(i);
-            return [cx + val * r * Math.cos(a), cy + val * r * Math.sin(a)];
-          };
-          const gridLevels = [0.25, 0.5, 0.75, 1.0];
-
-          // Zone polygons
-          const zonePolygons = zoneNames.map(zName => {
-            const zd = zoneData[zName];
-            const pts = axisVariants.map((v, i) => {
-              const val = zd.total > 0 ? (zd[v.id] || 0) / zd.total : 0;
-              return pt(i, val);
-            });
-            return { name: zName, color: SIDEBAR_ZONE_COLORS[zName] || '#94a3b8', pts };
-          });
-
-          // BL polygons — color derived from each BL's dominant dialect zone
-          const blPolygons = blData.map(bl => {
-            const blPts = DATA_POINTS.filter(p => p.item === phenomenon.id && p.bundesland === bl.bundesland);
-            const zoneCounts = {};
-            blPts.forEach(p => {
-              const z = zoneAssignments[p.id];
-              if (z) zoneCounts[z] = (zoneCounts[z] || 0) + 1;
-            });
-            const dominantZone = Object.entries(zoneCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
-            const color = SIDEBAR_ZONE_COLORS[dominantZone] || '#94a3b8';
-            const radarPts = axisVariants.map((v, i) => {
-              const val = bl.total > 0 ? (bl[v.id] || 0) / bl.total : 0;
-              return pt(i, val);
-            });
-            return { name: bl.bundesland, color, pts: radarPts };
-          });
-
-          const isZonenTab    = raumListTab === 'zonen';
-          const activePolygons = isZonenTab ? zonePolygons : blPolygons;
-          const isDimmed  = (name) => raumFilter !== 'all' && raumFilter !== name;
-          const isSelected = (name) => raumFilter !== 'all' && raumFilter === name;
+          // Rows for the active tab: dialect zones or Bundesländer
+          const rows = isZonenTab
+            ? zoneNames.map(z => ({ name: z, data: zoneData[z] }))
+            : blData.map(bl => ({ name: bl.bundesland, data: bl }));
 
           return (
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
@@ -470,63 +484,58 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
                 </div>
               </div> */}
 
-              {/* Radar SVG */}
+              {/* Distribution bars — compact version of DistributionChart */}
               <div style={{ borderRadius:12, border:'1px solid #e2e8f0', boxShadow:'0 1px 2px rgba(0,0,0,0.05)', padding:'12px', background:'#fafbfc' }}>
                 <div style={{ fontSize:11, fontWeight:700, color:'#78859a', letterSpacing:'0.5px', marginBottom:10 }}>
-                  {isZonenTab ? 'VARIANTENPROFIL PRO DIALEKTZONE' : 'VARIANTENPROFIL PRO BUNDESLAND'}
+                  {isZonenTab ? 'VARIANTENVERTEILUNG PRO DIALEKTZONE' : 'VARIANTENVERTEILUNG PRO BUNDESLAND'}
                 </div>
-                <svg viewBox="0 0 260 260" style={{ width:'100%', height:'auto', display:'block' }}>
-                  {/* Grid rings */}
-                  {gridLevels.map(lvl => (
-                    <polygon key={lvl}
-                      points={axisVariants.map((_, i) => pt(i, lvl).join(',')).join(' ')}
-                      fill="none" stroke="#e2e8f0" strokeWidth={0.8}/>
+
+                {/* Variant legend */}
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 10px', marginBottom:12 }}>
+                  {variants.map(v => (
+                    <div key={v.id} style={{ display:'flex', alignItems:'center', gap:4 }}>
+                      <div style={{ width:8, height:8, borderRadius:2, background:v.color, flexShrink:0 }}/>
+                      <span style={{ fontFamily:'Liberation Mono,monospace', fontSize:9, color:'#334155' }}>{v.label}</span>
+                    </div>
                   ))}
-                  {/* Axis lines */}
-                  {axisVariants.map((v, i) => {
-                    const [x, y] = pt(i, 1);
-                    return <line key={v.id} x1={cx} y1={cy} x2={x} y2={y} stroke="#e2e8f0" strokeWidth={0.8}/>;
-                  })}
-                  {/* Active polygons (zones or Bundesländer depending on tab) */}
-                  {activePolygons.map(({ name, color, pts: ppts }) => {
-                    const hovered  = hoveredZone === name;
-                    const dimmed   = isDimmed(name);
-                    const selected = isSelected(name);
+                </div>
+
+                {/* Stacked bars (each row scaled to 100% — shows variant composition) */}
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {rows.map(({ name, data }) => {
+                    const total = data?.total || 0;
+                    const isHov = hoveredZone === name;
                     return (
-                      <polygon key={name}
-                        points={ppts.map(p => p.join(',')).join(' ')}
-                        fill={color + (selected || hovered ? '55' : dimmed ? '0a' : '22')}
-                        stroke={color}
-                        strokeWidth={selected || hovered ? 2 : 1}
-                        opacity={dimmed ? 0.3 : 1}
-                        style={{ cursor:'pointer', transition:'all 0.15s' }}
+                      <div key={name}
                         onMouseEnter={() => setHoveredZone(name)}
-                        onMouseLeave={() => setHoveredZone(null)}
-                      />
+                        onMouseLeave={() => setHoveredZone(null)}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:3 }}>
+                          <span style={{ fontFamily:'Inter,sans-serif', fontSize:11,
+                            fontWeight: isHov ? 700 : 500, color: isHov ? '#0f172a' : '#334155',
+                            transition:'font-weight 0.1s' }}>{name}</span>
+                          <span style={{ fontFamily:'Inter,sans-serif', fontSize:10, fontWeight:700, color:'#64748b' }}>
+                            {total.toLocaleString('de-AT')}
+                          </span>
+                        </div>
+                        <div style={{
+                          display:'flex', height:14, borderRadius:4, overflow:'hidden', background:'#f1f5f9',
+                          boxShadow: isHov ? '0 0 0 2px #0f172a20' : 'none', transition:'box-shadow 0.15s',
+                        }}>
+                          {variants.map(v => {
+                            const count = data?.[v.id] || 0;
+                            const w = total > 0 ? count / total * 100 : 0;
+                            if (w === 0) return null;
+                            return (
+                              <div key={v.id}
+                                title={`${v.label}: ${count} (${Math.round(w)}%)`}
+                                style={{ width:`${w}%`, background:v.color, opacity:0.85, transition:'width 0.5s ease' }}/>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
-                  {/* Axis labels */}
-                  {axisVariants.map((v, i) => {
-                    const [x, y] = pt(i, 1.18);
-                    const anchor = x < cx - 5 ? 'end' : x > cx + 5 ? 'start' : 'middle';
-                    return (
-                      <text key={v.id} x={x} y={y} textAnchor={anchor} dominantBaseline="middle"
-                        style={{ fontSize:8, fontFamily:'Liberation Mono, monospace', fill:'#334155' }}>
-                        {v.label.length > 12 ? v.label.slice(0, 11) + '…' : v.label}
-                      </text>
-                    );
-                  })}
-                  {/* % labels on first axis */}
-                  {gridLevels.map(lvl => {
-                    const [x, y] = pt(0, lvl);
-                    return (
-                      <text key={lvl} x={x + 3} y={y} textAnchor="start" dominantBaseline="middle"
-                        style={{ fontSize:7, fontFamily:'Inter, sans-serif', fill:'#94a3b8' }}>
-                        {Math.round(lvl * 100)}%
-                      </text>
-                    );
-                  })}
-                </svg>
+                </div>
               </div>
 
               {/* Zone / Bundesland list */}
@@ -563,7 +572,11 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
                           border: sel ? `1px solid ${color}44` : '1px solid transparent',
                           transition:'all 0.15s',
                         }}>
-                        <div style={{ width:10, height:10, borderRadius:2, background:color, flexShrink:0 }}/>
+                        <div style={{
+                          width:10, height:10, borderRadius:2, flexShrink:0,
+                          border:`1px solid ${color}66`,
+                          ...zonePatternSwatchStyle(zName, color),
+                        }}/>
                         <span style={{ fontFamily:'Inter,sans-serif', fontSize:11, fontWeight:500, color:'#334155', flex:1 }}>{zName}</span>
                         <span style={{ fontFamily:'Liberation Mono,monospace', fontSize:9, color:'#64748b' }}>{dominant?.label}</span>
                         <span style={{ fontFamily:'Inter,sans-serif', fontSize:10, fontWeight:700, color:'#0f172a', minWidth:28, textAlign:'right' }}>{domPct}%</span>
@@ -596,7 +609,11 @@ const Sidebar = ({ phenomenon, onClose, zoneAssignments = {}, geojsonData, click
                           border: sel ? `1px solid ${zColor}44` : '1px solid transparent',
                           transition:'all 0.15s',
                         }}>
-                        <div style={{ width:10, height:10, borderRadius:2, background:zColor, flexShrink:0 }}/>
+                        <div style={{
+                          width:10, height:10, borderRadius:2, flexShrink:0,
+                          border:`1px solid ${zColor}66`,
+                          ...zonePatternSwatchStyle(dominantZone, zColor),
+                        }}/>
                         <span style={{ fontFamily:'Inter,sans-serif', fontSize:11, fontWeight:500, color:'#334155', flex:1 }}>{bl.bundesland}</span>
                         <span style={{ fontFamily:'Liberation Mono,monospace', fontSize:9, color:'#64748b' }}>{dominant?.label}</span>
                         <span style={{ fontFamily:'Inter,sans-serif', fontSize:10, fontWeight:700, color:'#0f172a', minWidth:28, textAlign:'right' }}>{domPct}%</span>

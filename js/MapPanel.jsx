@@ -84,6 +84,8 @@ function clipVoronoiCellsToMask(cells, maskMultiPolygon) {
 
 const MapPanel = ({ phenomenon, selectedVariant, mapMode, onPointClick, sidebarOpen, geojsonData }) => {
   const { useState, useEffect, useRef, useMemo } = React;
+  const [deckViewState, setDeckViewState] = useState(null);
+  const [svgPolygons, setSvgPolygons] = useState([]);
   const { DATA_POINTS, VARIANTS } = window.LEXVAD;
 
   const containerRef = useRef(null);
@@ -195,13 +197,19 @@ const MapPanel = ({ phenomenon, selectedVariant, mapMode, onPointClick, sidebarO
     // Carto light basemap (full extent)
     layers.push(makeBasemap('basemap'));
 
-    // Dialect region polygons
+    // Dialect region polygons (use FillStyleExtension for patterned fills)
     if (geojson && zonesVisible) {
+      const { FillStyleExtension } = window.deck || {};
+      const ext = (typeof FillStyleExtension === 'function') ? [new FillStyleExtension({ pattern: true })] : [];
       layers.push(new GeoJsonLayer({
         id: 'dialect-zones',
         data: geojson,
+        extensions: ext,
         stroked: true,
         filled: mode === 'punkt' || areaSubMode !== 'voronoi',
+        // If FillStyleExtension available, use pattern atlas + accessor
+        fillPatternAtlas: fillPatternAtlas || undefined,
+        getFillPattern: f => zonePatternId(f.properties.Dialektregion_Name),
         getFillColor: f => {
           const c = ZONE_COLORS[f.properties.Dialektregion_Name] || [200, 200, 200];
           return [...c, 30];
@@ -461,6 +469,7 @@ const MapPanel = ({ phenomenon, selectedVariant, mapMode, onPointClick, sidebarO
       initialViewState: { longitude: 13.4, latitude: 47.4, zoom: 6.3, pitch: 0, bearing: 0 },
       controller: true,
       layers: buildLayers(filteredPoints, variantMap, geojsonData, showZones, mapMode, areaMode, hexRadius, heatmapRadius, austriaMaskData, null, austriaClipMultiPolygon),
+      onViewStateChange: ({ viewState }) => { if (viewState) setDeckViewState(viewState); },
     });
     return () => { deckRef.current?.finalize(); deckRef.current = null; };
   }, []);
@@ -483,6 +492,118 @@ const MapPanel = ({ phenomenon, selectedVariant, mapMode, onPointClick, sidebarO
     deckRef.current.setProps({ layers: buildLayers(filteredPoints, variantMap, geojsonData, showZones, mapMode, areaMode, hexRadius, heatmapRadius, austriaMaskData, null, austriaClipMultiPolygon) });
   }, [filteredPoints, variantMap, geojsonData, showZones, mapMode, areaMode, hexRadius, heatmapRadius, austriaMaskData, austriaClipMultiPolygon]);
 
+  // --- Zone pattern defs (match Sidebar.jsx) --------------------------------
+  const SIDEBAR_ZONE_COLORS = window.LEXVAD_ZONE_COLORS || {};
+  const SIDEBAR_ZONE_PATTERN_ORDER = Object.keys(SIDEBAR_ZONE_COLORS);
+  const zonePatternIndex = (zoneName) => Math.max(0, SIDEBAR_ZONE_PATTERN_ORDER.indexOf(zoneName));
+  const zonePatternId = (zoneName) => `lexvad-zone-pattern-${zonePatternIndex(zoneName)}`;
+  const ZonePatternDefs = () => (
+    <defs>
+      {SIDEBAR_ZONE_PATTERN_ORDER.map((zoneName, index) => {
+        const color = SIDEBAR_ZONE_COLORS[zoneName];
+        const pattern = index % 6;
+        return (
+          <pattern key={zoneName} id={zonePatternId(zoneName)} patternUnits="userSpaceOnUse" width={8} height={8}>
+            <rect width={8} height={8} fill={color} opacity={0.10}/>
+            {pattern === 0 && <path d="M-2 8 L8 -2 M0 10 L10 0" stroke={color} strokeWidth={1.4} opacity={0.8}/>}            
+            {pattern === 1 && <path d="M-2 0 L8 10 M0 -2 L10 8" stroke={color} strokeWidth={1.4} opacity={0.8}/>}            
+            {pattern === 2 && <path d="M0 2 H8 M0 6 H8" stroke={color} strokeWidth={1.2} opacity={0.8}/>}            
+            {pattern === 3 && <path d="M2 0 V8 M6 0 V8" stroke={color} strokeWidth={1.2} opacity={0.8}/>}            
+            {pattern === 4 && <circle cx={2} cy={2} r={1.2} fill={color} opacity={0.8}/>}            
+            {pattern === 4 && <circle cx={6} cy={6} r={1.2} fill={color} opacity={0.8}/>}            
+            {pattern === 5 && <path d="M0 0 H4 V4 H0 Z M4 4 H8 V8 H4 Z" fill={color} opacity={0.45}/>}
+          </pattern>
+        );
+      })}
+    </defs>
+  );
+
+  // Build a small pattern atlas canvas for FillStyleExtension (8x8 tiles)
+  const fillPatternAtlas = useMemo(() => {
+    const names = SIDEBAR_ZONE_PATTERN_ORDER;
+    if (!names.length) return null;
+    const tileW = 8, tileH = 8;
+    const atlasW = tileW * names.length, atlasH = tileH;
+    const canvas = document.createElement('canvas');
+    canvas.width = atlasW; canvas.height = atlasH;
+    const ctx = canvas.getContext('2d');
+
+    const drawPattern = (idx, color) => {
+      const x0 = idx * tileW;
+      ctx.save();
+      ctx.translate(x0, 0);
+      // base
+      ctx.fillStyle = color; ctx.globalAlpha = 0.10; ctx.fillRect(0, 0, tileW, tileH); ctx.globalAlpha = 1;
+      const pattern = idx % 6;
+      ctx.strokeStyle = color; ctx.lineWidth = 1.0; ctx.fillStyle = color;
+      if (pattern === 0) {
+        ctx.beginPath(); ctx.moveTo(-2, tileH); ctx.lineTo(tileW+8, -2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, tileH+2); ctx.lineTo(tileW+10, 0); ctx.stroke();
+      } else if (pattern === 1) {
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(tileW+8, tileH+8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(tileW+8, tileH+6); ctx.stroke();
+      } else if (pattern === 2) {
+        ctx.beginPath(); ctx.moveTo(0, 2); ctx.lineTo(tileW, 2); ctx.moveTo(0, 6); ctx.lineTo(tileW, 6); ctx.stroke();
+      } else if (pattern === 3) {
+        ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(2, tileH); ctx.moveTo(6, 0); ctx.lineTo(6, tileH); ctx.stroke();
+      } else if (pattern === 4) {
+        ctx.beginPath(); ctx.arc(2, 2, 1.2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(6, 6, 1.2, 0, Math.PI*2); ctx.fill();
+      } else if (pattern === 5) {
+        ctx.fillRect(0,0,4,4); ctx.fillRect(4,4,4,4);
+      }
+      ctx.restore();
+    };
+
+    names.forEach((n, i) => drawPattern(i, SIDEBAR_ZONE_COLORS[n] || '#94a3b8'));
+
+    const img = new Image(); img.src = canvas.toDataURL();
+    const mapping = {};
+    names.forEach((n, i) => {
+      mapping[zonePatternId(n)] = [i * tileW, 0, tileW, tileH];
+    });
+    return { image: img, mapping, width: atlasW, height: atlasH };
+  }, [SIDEBAR_ZONE_PATTERN_ORDER.join('|')] );
+
+  // Project geojson polygons to screen-space SVG paths and store for overlay
+  useEffect(() => {
+    if (!geojsonData || !deckRef.current || !deckRef.current.viewports || !deckRef.current.viewports.length) {
+      setSvgPolygons([]);
+      return;
+    }
+    try {
+      const vp = deckRef.current.viewports[0];
+      const polys = [];
+      geojsonData.features.forEach((f, fi) => {
+        const name = f.properties?.Dialektregion_Name || `zone-${fi}`;
+        const geom = f.geometry;
+        if (!geom) return;
+        const ringsAll = [];
+        if (geom.type === 'Polygon') {
+          ringsAll.push(...geom.coordinates);
+        } else if (geom.type === 'MultiPolygon') {
+          geom.coordinates.forEach(p => ringsAll.push(...p));
+        }
+        // Build path d from first ring + holes
+        const dParts = [];
+        ringsAll.forEach((ring, ri) => {
+          const pts = ring.map(([lon, lat]) => vp.project([lon, lat]));
+          if (!pts || !pts.length) return;
+          const move = `M ${pts[0][0]} ${pts[0][1]}`;
+          const line = pts.slice(1).map(p => `L ${p[0]} ${p[1]}`).join(' ');
+          const close = 'Z';
+          dParts.push(`${move} ${line} ${close}`);
+        });
+        if (dParts.length) {
+          polys.push({ id: fi, name, d: dParts.join(' '), color: SIDEBAR_ZONE_COLORS[name] || '#94a3b8' });
+        }
+      });
+      setSvgPolygons(polys);
+    } catch (e) {
+      // projection can fail while viewports initialize; ignore
+      setSvgPolygons([]);
+    }
+  }, [geojsonData, deckViewState]);
+
   const legendItems = variants;
 
   // Unique zone names for legend
@@ -501,6 +622,21 @@ const MapPanel = ({ phenomenon, selectedVariant, mapMode, onPointClick, sidebarO
       }}>
         {/* Deck.gl canvas */}
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+
+        {/* SVG overlay: pattern defs + projected dialect polygons */}
+        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 3 }}>
+          <ZonePatternDefs/>
+          {svgPolygons.map(p => (
+            <path key={p.id}
+              d={p.d}
+              fill={p.name ? `url(#${zonePatternId(p.name)})` : p.color}
+              stroke={p.color}
+              strokeWidth={1.2}
+              fillOpacity={0.9}
+              opacity={0.95}
+            />
+          ))}
+        </svg>
 
         {/* Hover tooltip */}
         {hoverInfo && (() => {
